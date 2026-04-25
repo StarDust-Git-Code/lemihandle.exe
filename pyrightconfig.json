@@ -1,0 +1,14 @@
+{
+  "pythonVersion": "3.14",
+  "pythonPlatform": "Windows",
+  "venvPath": ".",
+  "pythonPath": "C:/Users/firex's ideapad/AppData/Local/Python/pythoncore-3.14-64/python.exe",
+  "include": ["."],
+  "exclude": ["__pycache__"],
+  "typeCheckingMode": "basic",
+  "reportMissingModuleSource": "none",
+  "reportMissingTypeStubs": "none",
+  "reportUnknownMemberType": "none",
+  "reportUnknownVariableType": "none",
+  "reportUnknownArgumentType": "none"
+}
