@@ -1,6 +1,0 @@
-{
-  "status": "success",
-  "ui_directive": "display_floating_card",
-  "ai_output": "🧠 Spatial Intent Detected.\n\nI can see you have VS Code open with a Python file. Based on your screen context, I suggest:\n\n1. The selected function can be refactored into a generator for better memory efficiency.\n2. There is an unhandled exception path on line 42.\n3. Consider adding type hints to improve IDE support.\n\nNo file-save action was triggered.",
-  "function_triggered": "none"
-}
