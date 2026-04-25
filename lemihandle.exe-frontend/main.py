@@ -1,6 +1,6 @@
 """
-main.py — Entry point for the Spatial Intent Engine (Dev A)
-============================================================
+main.py — Entry point for the Spatial Intent Engine (Frontend)
+==============================================================
 Wires together:
   • SIEOverlay      (PyQt5 transparent OS overlay)
   • GestureEngine   (MediaPipe QThread — camera path)
@@ -13,23 +13,23 @@ Wires together:
 Trigger workflow
 ----------------
 1. A gesture or hotkey fires _on_trigger(trigger_type).
-2. The system enters PENDING state: overlay shows "AWAITING DOUBLE BLINK…"
-   and a 1.5-second countdown starts.
-3a. User double-blinks ➜ _on_double_blink() calls _execute_pending():
-    capture screen → show PROCESSING → POST to backend.
-3b. Timer expires without a blink ➜ action silently aborts, UI resets.
+2. The system enters PENDING state: overlay shows "NOD TWICE TO CONFIRM"
+   and a 3-second countdown starts.
+3a. User nods twice ➜ _on_head_nodded() → _on_double_blink() → _execute_action():
+    screen capture (off-thread) → show PROCESSING → POST to backend.
+3b. Timer expires without a nod ➜ action silently aborts, UI resets.
 4. Backend responds ➜ overlay shows RESULT card, auto-dismisses after 8 s.
 
-Audio (palm) workflow
----------------------
-1. Open-palm gesture ➜ start_recording() + show LISTENING.
-2. Palm closes into fist ➜ stop_recording() + transcribe (background thread)
+Audio (palm / jaw) workflow
+----------------------------
+1. Open-palm OR mouth-open ➜ start_recording() + show LISTENING.
+2. Palm → fist OR mouth closes ➜ stop_recording() + transcribe (background)
    then call _on_trigger("gesture_palm", transcript).
-3. Palm relaxes / lost ➜ stop_recording() + discard, dismiss UI.
+3. Palm → relaxed (not fist) ➜ stop_recording() + discard, dismiss UI.
 
 Dismiss (fist) workflow
 -----------------------
-A fist while NOT in the audio-listening state cancels any pending action and
+A fist while NOT in audio-listening state cancels any pending action and
 resets the UI immediately.
 """
 
@@ -54,15 +54,15 @@ from network import send_async
 from overlay import SIEOverlay
 
 # ── Globals ────────────────────────────────────────────────────────────────
-_overlay:    Optional[SIEOverlay]    = None
-_gesture:    Optional[GestureEngine] = None
-_audio:      Optional[AudioEngine]   = None
+_overlay:    Optional[SIEOverlay]      = None
+_gesture:    Optional[GestureEngine]   = None
+_audio:      Optional[AudioEngine]     = None
 _controller: Optional["AppController"] = None
 _tray:       Optional[QSystemTrayIcon] = None
 
-_mic_enabled: bool = True                    # toggled from system tray
-_pending_action: Optional[dict] = None       # set while awaiting double-blink
-_debounce_lock = threading.Event()           # set = engine is cooling down
+_mic_enabled:    bool          = True   # toggled from system tray
+_pending_action: Optional[dict] = None  # set while awaiting nod confirmation
+_debounce_lock   = threading.Event()    # set = engine is cooling down
 
 
 # ── App controller (owns the confirmation timer — lives on Qt main thread) ──
@@ -71,7 +71,8 @@ class AppController(QObject):
         super().__init__(parent)
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
-        self._timer.setInterval(1500)          # 1.5 s to double-blink
+        # 3 seconds — enough time to read the prompt and nod twice deliberately
+        self._timer.setInterval(3000)
         self._timer.timeout.connect(_on_pending_timeout)
 
     @pyqtSlot()
@@ -86,6 +87,7 @@ class AppController(QObject):
 # ── Debounce helpers ───────────────────────────────────────────────────────
 def _lock_debounce() -> None:
     _debounce_lock.set()
+    # Pause the gesture engine so no spurious signals fire during cooldown
     if _gesture:
         _gesture.pause()
 
@@ -120,7 +122,7 @@ def _on_pending_timeout() -> None:
 def _on_trigger(trigger_type: str, audio_transcript: str = "") -> None:
     """
     Called from gesture callbacks or the keyboard hook (background threads).
-    Transitions the system into PENDING state — waits for double-blink before
+    Transitions the system into PENDING state — waits for a head nod before
     actually executing.
     """
     if _debounce_lock.is_set():
@@ -151,10 +153,10 @@ def _on_trigger(trigger_type: str, audio_transcript: str = "") -> None:
 
 # ── Confirmation handlers ──────────────────────────────────────────────────
 def _on_double_blink() -> None:
-    """Emitted by GestureEngine when two rapid blinks are detected."""
+    """Called when the user nods twice (or double-blinks in future modes)."""
     global _pending_action
     if _pending_action is None:
-        return  # No pending action — ignore spurious blinks
+        return  # No pending action — ignore spurious signals
 
     if _controller:
         QMetaObject.invokeMethod(
@@ -167,14 +169,13 @@ def _on_double_blink() -> None:
 
 
 def _execute_action(trigger_type: str, audio_transcript: str) -> None:
-    """Capture screen and fire the POST request on a background thread."""
-    print(f"[Trigger] CONFIRMED — {trigger_type}. Capturing screen…")
+    """
+    Fire screen capture + POST on a single background thread.
 
-    try:
-        screen_b64 = capture_screen_b64()
-    except RuntimeError as exc:
-        print(f"[Capture] Failed: {exc}")
-        screen_b64 = ""
+    Screen capture runs OFF the Qt main thread to keep the overlay
+    responsive (no event-loop stall).
+    """
+    print(f"[Trigger] CONFIRMED — {trigger_type}. Capturing screen…")
 
     if _overlay:
         QMetaObject.invokeMethod(_overlay, "set_processing", Qt.QueuedConnection)
@@ -189,8 +190,19 @@ def _execute_action(trigger_type: str, audio_transcript: str) -> None:
             _overlay.error_ready.emit(msg)
         _schedule_release()
 
-    send_async(trigger_type, screen_b64, audio_transcript, _on_success, _on_error)
-    print(f"[Network] POST dispatched — mock_mode={MOCK_MODE}")
+    def _worker() -> None:
+        """Runs entirely on a daemon thread — no Qt main-thread work here."""
+        try:
+            screen_b64 = capture_screen_b64()
+        except RuntimeError as exc:
+            print(f"[Capture] Failed: {exc}")
+            screen_b64 = ""
+
+        send_async(trigger_type, screen_b64, audio_transcript, _on_success, _on_error)
+        print(f"[Network] POST dispatched — mock_mode={MOCK_MODE}")
+
+    t = threading.Thread(target=_worker, daemon=True, name="SIE-CaptureAndSend")
+    t.start()
 
 
 # ── Keyboard trigger ───────────────────────────────────────────────────────
@@ -223,12 +235,12 @@ def _on_palm_submitted() -> None:
     print("[Gesture] Palm submitted — stopping recording.")
     _audio.stop_recording()
 
-    # Transcription is blocking (network call). Run it off the main thread.
+    # Transcription is a blocking network call — run on a worker thread.
     def _transcribe_and_trigger() -> None:
         transcript = _audio.transcribe()
         _on_trigger("gesture_palm", transcript)
 
-    t = threading.Thread(target=_transcribe_and_trigger, daemon=True, name="Transcribe")
+    t = threading.Thread(target=_transcribe_and_trigger, daemon=True, name="SIE-Transcribe")
     t.start()
 
 
@@ -238,7 +250,6 @@ def _on_palm_cancelled() -> None:
         return
     print("[Gesture] Palm cancelled — discarding recording.")
     _audio.stop_recording()
-    # Discard buffered audio without transcribing.
     if _overlay:
         QMetaObject.invokeMethod(_overlay, "_dismiss", Qt.QueuedConnection)
 
@@ -247,11 +258,11 @@ def _on_fist_detected() -> None:
     """Fist: universal stop / dismiss."""
     global _pending_action
 
-    # If recording, stop without transcribing.
+    # Stop any active recording without transcribing.
     if _audio and _audio.is_recording:
         _audio.stop_recording()
 
-    # Cancel any pending action and release the debounce lock.
+    # Cancel any pending action and release debounce.
     if _pending_action is not None:
         _pending_action = None
         if _controller:
@@ -265,12 +276,12 @@ def _on_fist_detected() -> None:
 
 # ── Face gesture handlers ─────────────────────────────────────────────────
 def _on_head_nodded() -> None:
-    """Head nod = confirm pending action (same as double-blink was)."""
+    """Head nod = confirm pending action."""
     _on_double_blink()
 
 
 def _on_head_shaken() -> None:
-    """Head shake = dismiss (same as fist but from face)."""
+    """Head shake = dismiss (natural 'no')."""
     _on_fist_detected()
 
 
@@ -334,7 +345,6 @@ def _setup_tray(app: QApplication) -> QSystemTrayIcon:
     def _toggle_mic(checked: bool) -> None:
         global _mic_enabled
         _mic_enabled = checked
-        # If mic was just disabled while actively recording, stop cleanly.
         if not checked and _audio and _audio.is_recording:
             _audio.stop_recording()
             if _overlay:
@@ -350,7 +360,7 @@ def _setup_tray(app: QApplication) -> QSystemTrayIcon:
     menu.addAction(quit_action)
 
     tray.setContextMenu(menu)
-    tray.setToolTip("Spatial Intent Engine")
+    tray.setToolTip("Spatial Intent Engine — Lemihandle")
     tray.show()
     return tray
 
@@ -360,8 +370,8 @@ def main() -> None:
     global _overlay, _gesture, _audio, _controller, _tray
 
     print("=" * 60)
-    print("  SPATIAL INTENT ENGINE — Dev A Frontend")
-    print(f"  Mock mode : {MOCK_MODE}")
+    print("  SPATIAL INTENT ENGINE — Lemihandle Frontend")
+    print(f"  Mock mode        : {MOCK_MODE}")
     print(f"  Hotkey (Trigger) : {HOTKEY}")
     print(f"  Hotkey (Quit)    : {QUIT_HOTKEY}")
     print("=" * 60)
@@ -369,8 +379,7 @@ def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("SpatialIntentEngine")
     app.setApplicationDisplayName("Gemini.exe — Spatial Intent Engine")
-    # Prevent the app from quitting when all windows are closed
-    # (tray icon keeps it alive).
+    # Keep the app alive even when all windows are closed (tray keeps it running)
     app.setQuitOnLastWindowClosed(False)
 
     # Controller must be created before any signals are connected.
@@ -378,7 +387,7 @@ def main() -> None:
 
     _tray = _setup_tray(app)
 
-    # ── Overlay ─────────────────────────────────────────────────────────
+    # ── Overlay ──────────────────────────────────────────────────────────
     _overlay = SIEOverlay()
     _overlay.show()
 
@@ -406,7 +415,7 @@ def main() -> None:
     # ── Keyboard hooks ────────────────────────────────────────────────────
     keyboard.add_hotkey(HOTKEY, _on_keyboard_trigger)
     keyboard.add_hotkey(QUIT_HOTKEY, _quit_app)
-    print(f"[Keyboard] Hotkeys registered.")
+    print("[Keyboard] Hotkeys registered.")
 
     # ── Event loop ────────────────────────────────────────────────────────
     exit_code = app.exec_()
@@ -415,7 +424,8 @@ def main() -> None:
     keyboard.remove_all_hotkeys()
     if _audio and _audio.is_recording:
         _audio.stop_recording()
-    _gesture.stop()
+    if _gesture:
+        _gesture.stop()
 
     sys.exit(exit_code)
 

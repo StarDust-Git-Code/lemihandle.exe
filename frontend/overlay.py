@@ -421,12 +421,23 @@ class SIEOverlay(QMainWindow):
         self._fade_out_then_idle()
 
     def _fade_in(self) -> None:
+        # Disconnect any lingering finished handler before starting fade-in
+        try:
+            self._anim.finished.disconnect()
+        except TypeError:
+            pass
         self._anim.stop()
-        self._anim.setStartValue(0.0)
+        self._anim.setStartValue(self.windowOpacity())
         self._anim.setEndValue(1.0)
         self._anim.start()
 
     def _fade_out_then_idle(self) -> None:
+        # Always disconnect first — prevents the signal from accumulating
+        # handlers across multiple dismiss/show cycles (the flicker bug).
+        try:
+            self._anim.finished.disconnect()
+        except TypeError:
+            pass
         self._anim.stop()
         self._anim.setStartValue(self.windowOpacity())
         self._anim.setEndValue(0.0)
@@ -434,12 +445,16 @@ class SIEOverlay(QMainWindow):
         self._anim.start()
 
     def _reset_to_idle(self) -> None:
+        # Disconnect guard — should already be disconnected but be defensive
         try:
-            self._anim.finished.disconnect(self._reset_to_idle)
+            self._anim.finished.disconnect()
         except TypeError:
             pass
         self._canvas.set_idle()
-        self.setWindowOpacity(1.0)  # Reset so overlay is paint-ready next cycle
+        self._dismiss_timer.stop()
+        # Do NOT set windowOpacity here — it causes a one-frame flash.
+        # The next _fade_in() will set the correct start value from whatever
+        # opacity the window currently has.
         if self._hwnd:
             _apply_click_through(self._hwnd)
 

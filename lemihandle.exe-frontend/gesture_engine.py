@@ -79,6 +79,7 @@ class GestureEngine(QThread):
         self._paused        = False
 
         # ── Hand state ───────────────────────────────────────────────────
+        self._is_pinching   = False  # rising-edge guard — prevents continuous firing
         self._is_palm_open  = False
         self._fist_cooldown = 0.0
 
@@ -204,9 +205,12 @@ class GestureEngine(QThread):
                 )
 
             if dist(4, 8) < PINCH_THRESHOLD_PX:
-                self.pinch_detected.emit()
-                time.sleep(0.15)
+                # — Rising-edge detection: emit only on the first pinched frame —
+                if not self._is_pinching:
+                    self._is_pinching = True
+                    self.pinch_detected.emit()
             else:
+                self._is_pinching = False  # reset when fingers separate
                 norm = dist(0, 9)
                 if norm > 0:
                     ratio = sum(dist(0, t) for t in [8, 12, 16, 20]) / (4.0 * norm)

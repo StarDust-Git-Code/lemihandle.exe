@@ -1,8 +1,8 @@
-<<<<<<< HEAD
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyc
 
 # Environments
 .env
@@ -21,9 +21,3 @@ venv.bak/
 dist/
 build/
 *.egg-info/
-=======
-.venv/
-__pycache__/
-*.pyc
-.env
->>>>>>> backend

@@ -6,4 +6,6 @@ keyboard==0.13.5
 requests>=2.31.0
 Pillow>=10.4.0
 SpeechRecognition==3.16.1
-scipy==1.17.1
+sounddevice>=0.4.6
+numpy==1.26.4
+scipy>=1.11.0

@@ -98,7 +98,9 @@ Open a **new** terminal and navigate to the `frontend` directory:
 cd frontend
 pip install -r requirements.txt
 ```
-> **Note:** The frontend requires `numpy==1.26.4` to remain compatible with pre-compiled MediaPipe/TensorFlow binaries.
+> **Note:** The frontend requires `numpy==1.26.4` to remain compatible with pre-compiled
+> MediaPipe/TensorFlow binaries. `sounddevice` is also required for mic capture — both are
+> already included in `requirements.txt`.
 
 Start the overlay:
 ```bash
