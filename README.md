@@ -60,50 +60,18 @@ Lemihandle/
 └── assets/                    # Media and README assets
 ```
 
----
-
 ## ⚙️ Setup & Installation
 
-### Prerequisites
-- Python 3.10+
-- A working webcam
-- A working microphone
-- A Google Gemini API Key
+### The 1-Click Method (Windows)
+The easiest way to install and run the engine is by using the included startup script.
 
-### 1. Backend Setup
-
-Open a terminal and navigate to the `backend` directory:
-
-```bash
-cd backend
-pip install -r requirements.txt
-```
-
-Create a `.env` file in the `backend/` directory:
-```env
-GEMINI_API_KEYS=your_api_key_1,your_api_key_2
-LEMIHANDLE_MODEL=gemini-2.5-flash-lite
-```
-
-Start the backend server:
-```bash
-python -m uvicorn main:app --port 8000
-```
-
-### 2. Frontend Setup
-
-Open a **new** terminal and navigate to the `frontend` directory:
-
-```bash
-cd frontend
-pip install -r requirements.txt
-```
-> **Note:** The frontend requires `numpy==1.26.4` to remain compatible with pre-compiled MediaPipe/TensorFlow binaries.
-
-Start the overlay:
-```bash
-python main.py
-```
+1. Double-click `start.bat` in the root folder.
+2. The script will automatically:
+   - Create an isolated Python virtual environment (`venv`).
+   - Install all required backend and frontend dependencies.
+   - Generate a default `backend\.env` file.
+3. Open `backend\.env` in any text editor and paste your **Google Gemini API Key**.
+4. Double-click `start.bat` again! It will launch the FastAPI backend in the background and start the transparent UI overlay.
 
 ---
 
