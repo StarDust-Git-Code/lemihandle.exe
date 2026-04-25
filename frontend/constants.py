@@ -4,7 +4,7 @@
 # All other constants are environment-agnostic.
 
 # ── Phase toggles ─────────────────────────────────────────────────────────
-MOCK_MODE: bool = True          # Phase 1: True → read mock_response.json
+MOCK_MODE: bool = False         # Phase 1: True → read mock_response.json
                                 # Phase 3: False → POST to BACKEND_URL
 
 # ── Network ───────────────────────────────────────────────────────────────

@@ -86,14 +86,10 @@ class AppController(QObject):
 # ── Debounce helpers ───────────────────────────────────────────────────────
 def _lock_debounce() -> None:
     _debounce_lock.set()
-    if _gesture:
-        _gesture.pause()
 
 
 def _release_debounce() -> None:
     _debounce_lock.clear()
-    if _gesture:
-        _gesture.resume()
     print("[Debounce] Re-enabled.")
 
 
